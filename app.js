@@ -1,6 +1,8 @@
 var restify = require('restify');
 var builder = require('botbuilder');
 var dotenv = require('dotenv');
+var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+
 
 dotenv.load();
 
@@ -20,6 +22,10 @@ var connector = new builder.ChatConnector({
     appPassword: process.env.MICROSOFT_APP_PASSWORD
 });
 var bot = new builder.UniversalBot(connector);
+
+//var model = process.env.model || 'https://api.projectoxford.ai/luis/v2.0/apps/' + process.env.LUIS_APP_ID + '?subscription-key=' + process.env.LUIS_KEY;
+//bot.recognizer(new builder.LuisRecognizer(model));
+
 server.post('/api/messages', connector.listen());
 
 var intents = new builder.IntentDialog();
@@ -29,34 +35,47 @@ bot.dialog('/', intents);
 // Bots Dialogs
 //=========================================================
 
-intents.matches(/^change name/i, [
-    function (session) {
-        session.beginDialog('/profile');
-    },
-    function (session, results) {
-        session.send('Ok... Changed your name to %s', session.userData.name);
+function getGyms() {
+  var xhttp = new XMLHttpRequest();
+  xhttp.open("GET", "https://oslo.pogonorge.com/stopit?pokemon=false&pokestops=false&gyms=true&swLat=59.910890744391594&swLng=10.46924512326359&neLat=59.97915351474353&neLng=10.949553655978434", false);
+  xhttp.setRequestHeader("Content-type", "application/json");
+  xhttp.send();
+  var response = xhttp.responseText;
+  if(response) {
+    try {
+        parsedResponse = JSON.parse(response);
+    } catch(e) {
+        console.log(e); // error in the above string (in this case, yes)!
     }
-]);
+  }
+  return parsedResponse ? parsedResponse.gyms : null;
+}
 
 intents.onDefault([
-    function (session, args, next) {
-        if (!session.userData.name) {
-            session.beginDialog('/profile');
-        } else {
-            next();
-        }
-    },
-    function (session, results) {
-        session.send('Hello %s!', session.userData.name);
-    }
+  function (session) {
+    session.beginDialog('/gym');
+  }
 ]);
 
-bot.dialog('/profile', [
-    function (session) {
-        builder.Prompts.text(session, 'Hi! What is your name?');
-    },
+bot.dialog('/gym', [
+  function (session) {
+      builder.Prompts.text(session, 'Hvilken gym ønsker du info om?');
+  },
     function (session, results) {
-        session.userData.name = results.response;
-        session.endDialog();
+        found = false;
+        gyms = getGyms();
+
+        for (gym in gyms) {
+          if (gyms[gym].name) {
+            if (gyms[gym].name.toLowerCase() === results.response.toLowerCase()) {
+              found = true;
+              session.send(gyms[gym].name + ' har score: ' + gyms[gym].gym_points);
+            }
+          }
+        }
+        if (!found) {
+          session.send('Kunne dessverre ikke finne gym med det navnet. Prøv på nytt.');
+        }
+        session.beginDialog('/gym');
     }
 ]);
